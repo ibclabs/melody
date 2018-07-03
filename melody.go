@@ -161,7 +161,7 @@ func (m *Melody) HandleRequest(w http.ResponseWriter, r *http.Request) error {
 	return m.HandleRequestWithKeys(w, r, nil)
 }
 
-// HandleRequestWithKeys does the same as HandleRequest but populates session.Keys with keys.
+// HandleRequestWithKeys does the same as HandleRequest but populates session.keys with keys.
 func (m *Melody) HandleRequestWithKeys(w http.ResponseWriter, r *http.Request, keys map[string]interface{}) error {
 	if m.hub.closed() {
 		return errors.New("melody instance is closed")
@@ -174,13 +174,14 @@ func (m *Melody) HandleRequestWithKeys(w http.ResponseWriter, r *http.Request, k
 	}
 
 	session := &Session{
-		Request: r,
-		Keys:    keys,
-		conn:    conn,
-		output:  make(chan *envelope, m.Config.MessageBufferSize),
-		melody:  m,
-		open:    true,
-		rwmutex: &sync.RWMutex{},
+		request:  r,
+		keys:     keys,
+		conn:     conn,
+		output:   make(chan *envelope, m.Config.MessageBufferSize),
+		melody:   m,
+		open:     true,
+		stateMux: &sync.RWMutex{},
+		dataMux:  &sync.RWMutex{},
 	}
 
 	m.hub.register <- session

@@ -11,13 +11,14 @@ import (
 
 // Session wrapper around websocket connections.
 type Session struct {
-	Request *http.Request
-	Keys    map[string]interface{}
-	conn    *websocket.Conn
-	output  chan *envelope
-	melody  *Melody
-	open    bool
-	rwmutex *sync.RWMutex
+	request  *http.Request
+	keys     map[string]interface{}
+	conn     *websocket.Conn
+	output   chan *envelope
+	melody   *Melody
+	open     bool
+	stateMux *sync.RWMutex
+	dataMux  *sync.RWMutex
 }
 
 func (s *Session) writeMessage(message *envelope) {
@@ -49,19 +50,19 @@ func (s *Session) writeRaw(message *envelope) error {
 }
 
 func (s *Session) closed() bool {
-	s.rwmutex.RLock()
-	defer s.rwmutex.RUnlock()
+	s.stateMux.RLock()
+	defer s.stateMux.RUnlock()
 
 	return !s.open
 }
 
 func (s *Session) close() {
 	if !s.closed() {
-		s.rwmutex.Lock()
+		s.stateMux.Lock()
 		s.open = false
 		s.conn.Close()
 		close(s.output)
-		s.rwmutex.Unlock()
+		s.stateMux.Unlock()
 	}
 }
 
@@ -185,20 +186,26 @@ func (s *Session) CloseWithMsg(msg []byte) error {
 }
 
 // Set is used to store a new key/value pair exclusivelly for this session.
-// It also lazy initializes s.Keys if it was not used previously.
+// It also lazy initializes s.keys if it was not used previously.
 func (s *Session) Set(key string, value interface{}) {
-	if s.Keys == nil {
-		s.Keys = make(map[string]interface{})
+	s.dataMux.Lock()
+	defer s.dataMux.Unlock()
+
+	if s.keys == nil {
+		s.keys = make(map[string]interface{})
 	}
 
-	s.Keys[key] = value
+	s.keys[key] = value
 }
 
 // Get returns the value for the given key, ie: (value, true).
 // If the value does not exists it returns (nil, false)
 func (s *Session) Get(key string) (value interface{}, exists bool) {
-	if s.Keys != nil {
-		value, exists = s.Keys[key]
+	s.dataMux.RLock()
+	defer s.dataMux.RUnlock()
+
+	if s.keys != nil {
+		value, exists = s.keys[key]
 	}
 
 	return
@@ -206,6 +213,9 @@ func (s *Session) Get(key string) (value interface{}, exists bool) {
 
 // MustGet returns the value for the given key if it exists, otherwise it panics.
 func (s *Session) MustGet(key string) interface{} {
+	s.dataMux.RLock()
+	defer s.dataMux.RUnlock()
+
 	if value, exists := s.Get(key); exists {
 		return value
 	}
@@ -216,4 +226,17 @@ func (s *Session) MustGet(key string) interface{} {
 // IsClosed returns the status of the connection.
 func (s *Session) IsClosed() bool {
 	return s.closed()
+}
+
+// Keys return map with all keys map
+func (s *Session) Keys() map[string]interface{} {
+	s.dataMux.RLock()
+	defer s.dataMux.RUnlock()
+
+	return s.keys
+}
+
+// Request return init http.Request
+func (s *Session) Request() *http.Request {
+	return s.request
 }
